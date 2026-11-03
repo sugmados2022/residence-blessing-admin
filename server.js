@@ -17,6 +17,12 @@ const ASSETS_DIR = path.join(__dirname, 'assets');
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
 const AUTH_REQUIRED = ADMIN_PASSWORD.length > 0;
 
+// CORS : seules les routes /api/* sont exposées, et uniquement à ces deux origines.
+const ALLOWED_ORIGINS = new Set([
+  'https://residence-blessing.onrender.com',
+  'http://localhost:3000',
+]);
+
 const sessions = new Set();
 
 function safeEqual(a, b) {
@@ -102,6 +108,22 @@ const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url, 'http://localhost');
     const pathname = url.pathname;
+
+    // CORS pour les routes /api/* uniquement : origine autorisée reflétée,
+    // preflight OPTIONS répondu sans passer par les gestionnaires de routes.
+    if (pathname.startsWith('/api/')) {
+      const origin = req.headers.origin || '';
+      if (ALLOWED_ORIGINS.has(origin)) {
+        res.setHeader('Access-Control-Allow-Origin', origin);
+        res.setHeader('Vary', 'Origin');
+        res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+      }
+      if (req.method === 'OPTIONS') {
+        res.writeHead(204);
+        return res.end();
+      }
+    }
 
     if (pathname === '/api/status') {
       return sendJson(res, 200, { authRequired: AUTH_REQUIRED, authenticated: isAuthenticated(req) });
