@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title id="seoTitle">Résidence Blessing</title>
+<meta id="seoDesc" name="description" content="">
+<style>
+  body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; margin: 0; background: #f4f1ea; color: #222; }
+  header { background: #14213d; color: #fff; padding: 32px 24px; }
+  header h1 { margin: 0 0 8px; }
+  main { max-width: 900px; margin: 0 auto; padding: 16px; }
+  section { background: #fff; border: 1px solid #ddd; border-radius: 10px; padding: 18px; margin: 16px 0; }
+  img { max-width: 100%; border-radius: 8px; }
+  .gallery { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .gallery figure { margin: 0; }
+  .gallery figcaption { font-size: 14px; color: #555; margin-top: 4px; }
+  table { border-collapse: collapse; width: 100%; }
+  td, th { border-bottom: 1px solid #eee; padding: 8px; text-align: left; }
+  a { color: #14213d; }
+  .btn { display: inline-block; background: #c9a227; color: #fff; padding: 12px 20px; border-radius: 8px; text-decoration: none; margin-right: 10px; }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="name"></h1>
+  <p id="tagline"></p>
+  <p id="meta"></p>
+</header>
+<main>
+  <section>
+    <h2>Le logement</h2>
+    <p id="description"></p>
+    <p id="descriptionLong"></p>
+    <p id="facts"></p>
+  </section>
+  <section>
+    <h2>Photos</h2>
+    <div class="gallery" id="gallery"></div>
+  </section>
+  <section>
+    <h2>Équipements</h2>
+    <ul id="amenities"></ul>
+  </section>
+  <section>
+    <h2>Tarifs</h2>
+    <table id="pricing"></table>
+    <p id="feesNote" class="small"></p>
+  </section>
+  <section>
+    <h2>Avis</h2>
+    <div id="reviews"></div>
+  </section>
+  <section>
+    <h2>Questions fréquentes</h2>
+    <div id="faqs"></div>
+  </section>
+  <section>
+    <h2>Réserver</h2>
+    <p>
+      <a class="btn" id="airbnbLink" target="_blank" rel="noopener">Réserver sur Airbnb</a>
+      <a class="btn" id="bookingLink" target="_blank" rel="noopener">Réserver sur Booking.com</a>
+    </p>
+    <p id="address"></p>
+  </section>
+</main>
+<script>
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+fetch('/api/data').then(r => r.json()).then(d => {
+  const p = d.property, pr = d.pricing;
+  document.title = d.seo.title;
+  document.getElementById('seoTitle').textContent = d.seo.title;
+  document.getElementById('seoDesc').setAttribute('content', d.seo.description);
+  document.getElementById('name').textContent = p.name;
+  document.getElementById('tagline').textContent = p.tagline;
+  document.getElementById('meta').textContent = `${p.neighborhood} · ${p.commune} · ${p.country} — ${p.surfaceM2} m²`;
+  document.getElementById('description').textContent = p.description;
+  document.getElementById('descriptionLong').textContent = p.descriptionLong;
+  document.getElementById('facts').textContent =
+    `${p.type} — ${p.bedrooms} chambres ${p.bedroomsNote || ''}, ${p.guests} voyageurs maximum, ${p.beds} couchages (${p.bedsDetail}), ${p.bathrooms} salles de bain, séjour de ${p.minNights} à ${p.maxNights} nuits. Animaux : ${p.petsAccepted ? 'acceptés' : 'non acceptés'}. ${p.accessNote}`;
+  document.getElementById('gallery').innerHTML = (d.photos || []).map(ph =>
+    `<figure><img src="/assets/${esc(ph.file)}" alt="${esc(ph.alt)}"><figcaption>${esc(ph.caption)}</figcaption></figure>`).join('');
+  document.getElementById('amenities').innerHTML = (d.amenities || []).map(a =>
+    `<li><strong>${esc(a.title)}</strong> — ${esc(a.detail)}</li>`).join('');
+  const tierRows = (pr.tiers || []).map(t =>
+    `<tr><td>Dès ${esc(t.minNights)} nuits</td><td>${esc(t.label)}</td><td>−${esc(t.discount)} %</td></tr>`).join('');
+  document.getElementById('pricing').innerHTML =
+    `<tr><th>Durée</th><th>Offre</th><th>Réduction</th></tr>
+     <tr><td>Nuitée</td><td>Tarif de base</td><td>${esc(pr.base)} $US</td></tr>
+     <tr><td>Nuits de fin de semaine</td><td>${esc(pr.weekendNote || '')}</td><td>${esc(pr.weekend)} $US</td></tr>${tierRows}`;
+  document.getElementById('feesNote').textContent = pr.feesNote || '';
+  document.getElementById('reviews').innerHTML = (d.reviews || []).filter(r => r.text).map(r =>
+    `<blockquote>« ${esc(r.text)} »<br><small>${esc(r.source)} — ${esc(r.rating)}</small>${r.reply ? `<br><em>Réponse de la résidence : « ${esc(r.reply)} »</em>` : ''}</blockquote>`).join('')
+    || '<p>Aucun avis publié pour le moment.</p>';
+  document.getElementById('faqs').innerHTML = (d.faqs || []).map(f =>
+    `<p><strong>${esc(f.question)}</strong><br>${esc(f.answer)}</p>`).join('');
+  document.getElementById('airbnbLink').href = d.links.airbnb;
+  document.getElementById('bookingLink').href = d.links.booking;
+  document.getElementById('address').textContent =
+    `${p.address}, ${p.neighborhood}, ${p.commune}, ${p.country} — Plus Code : ${p.plusCode}`;
+}).catch(() => {
+  document.getElementById('description').textContent = 'Impossible de charger les données.';
+});
+</script>
+</body>
+</html>

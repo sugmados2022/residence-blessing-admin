@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Résidence Blessing — Administration</title>
+<style>
+  body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; margin: 0; background: #f4f1ea; color: #222; }
+  header { background: #14213d; color: #fff; padding: 16px 24px; }
+  header h1 { margin: 0; font-size: 22px; }
+  header p { margin: 4px 0 0; opacity: .85; }
+  main { max-width: 960px; margin: 0 auto; padding: 16px; }
+  .banner { padding: 12px 16px; border-radius: 8px; margin: 12px 0; }
+  .warn { background: #fff3cd; border: 1px solid #e6c200; }
+  .ok { background: #d4edda; border: 1px solid #7bc48a; }
+  .err { background: #f8d7da; border: 1px solid #e08a93; }
+  .tabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 16px 0; }
+  .tabs button { border: 1px solid #ccc; background: #fff; padding: 8px 14px; border-radius: 20px; cursor: pointer; }
+  .tabs button.active { background: #14213d; color: #fff; border-color: #14213d; }
+  .panel { display: none; background: #fff; border: 1px solid #ddd; border-radius: 10px; padding: 18px; }
+  .panel.active { display: block; }
+  label { display: block; margin: 10px 0 4px; font-weight: 600; font-size: 14px; }
+  input[type="text"], input[type="number"], input[type="url"], textarea { width: 100%; box-sizing: border-box; padding: 9px; border: 1px solid #ccc; border-radius: 6px; font: inherit; }
+  textarea { min-height: 70px; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .item { border: 1px solid #e3e3e3; border-radius: 8px; padding: 12px; margin: 10px 0; background: #fafafa; }
+  .item img { max-width: 220px; border-radius: 6px; display: block; margin-bottom: 8px; }
+  .small { font-size: 13px; color: #666; }
+  .actions { margin: 16px 0; display: flex; gap: 10px; flex-wrap: wrap; }
+  button.primary { background: #c9a227; color: #fff; border: none; padding: 12px 22px; border-radius: 8px; cursor: pointer; font-size: 16px; }
+  button.secondary { background: #fff; border: 1px solid #999; padding: 8px 14px; border-radius: 8px; cursor: pointer; }
+  button.danger { background: #fff; border: 1px solid #c0392b; color: #c0392b; padding: 6px 12px; border-radius: 6px; cursor: pointer; }
+  .preview { background: #fff; border: 1px solid #ddd; border-radius: 10px; padding: 18px; margin-top: 20px; }
+  .preview img { max-width: 100%; border-radius: 8px; }
+  #simResult { font-size: 18px; font-weight: 700; margin-top: 8px; }
+  a { color: #14213d; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Résidence Blessing — Administration</h1>
+  <p>Modifiez les informations de la page, puis enregistrez. Les changements sont stockés dans data.json.</p>
+</header>
+<main>
+  <div id="authBanner" class="banner warn" style="display:none"></div>
+  <div id="loginBox" class="panel" style="display:none">
+    <h2>Connexion requise</h2>
+    <p class="small">L'écriture est protégée par mot de passe (variable ADMIN_PASSWORD).</p>
+    <label>Mot de passe administrateur</label>
+    <input type="password" id="loginPassword" autocomplete="current-password">
+    <div class="actions"><button class="primary" id="loginBtn">Se connecter</button></div>
+    <p id="loginMsg" class="small"></p>
+  </div>
+
+  <div class="tabs" id="tabs"></div>
+
+  <form id="adminForm" onsubmit="return false">
+    <div id="panels"></div>
+  </form>
+
+  <div class="actions">
+    <button class="primary" id="saveBtn">Enregistrer</button>
+    <a class="secondary" href="/visitor.html" target="_blank" rel="noopener" style="text-decoration:none; padding: 12px 18px;">Ouvrir l'aperçu visiteur</a>
+  </div>
+  <p id="saveMsg"></p>
+
+  <section class="preview">
+    <h2>Aperçu visiteur</h2>
+    <div id="preview"></div>
+    <h3>Simulation tarifaire</h3>
+    <label>Nombre de nuits</label>
+    <input type="number" id="simNights" min="1" max="365" value="7">
+    <div id="simResult"></div>
+    <p class="small">La réduction la plus avantageuse pour la durée s'applique (les paliers ne se cumulent pas). Prix hors week-end : le tarif week-end (vendredi et samedi) est indiqué séparément dans les tarifs.</p>
+  </section>
+</main>
+<script>
+let data = null;
+let status = { authRequired: false, authenticated: true };
+
+const TABS = [
+  ['infos', 'Infos'], ['tarifs', 'Tarifs'], ['equipements', 'Équipements'],
+  ['photos', 'Photos'], ['faq', 'FAQ'], ['posts', 'Posts'], ['avis', 'Avis'], ['liens', 'Liens / SEO'],
+];
+
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function field(label, path, type) {
+  const v = path.split('.').reduce((o, k) => (o ? o[k] : ''), data);
+  return `<label>${label}</label><input type="${type || 'text'}" data-path="${path}" value="${esc(v)}">`;
+}
+function area(label, path) {
+  const v = path.split('.').reduce((o, k) => (o ? o[k] : ''), data);
+  return `<label>${label}</label><textarea data-path="${path}">${esc(v)}</textarea>`;
+}
+function numField(label, path) {
+  const v = path.split('.').reduce((o, k) => (o ? o[k] : ''), data);
+  return `<label>${label}</label><input type="number" data-path="${path}" value="${esc(v)}">`;
+}
+
+function listPanel(title, key, fields, addLabel) {
+  const items = (data[key] || []).map((it, i) => {
+    const inner = fields.map(f => {
+      const v = it[f.key] == null ? '' : it[f.key];
+      if (f.textarea) return `<label>${f.label}</label><textarea data-list="${key}" data-index="${i}" data-key="${f.key}">${esc(v)}</textarea>`;
+      return `<label>${f.label}</label><input type="text" data-list="${key}" data-index="${i}" data-key="${f.key}" value="${esc(v)}">`;
+    }).join('');
+    return `<div class="item">${inner}<button type="button" class="danger" data-remove="${key}" data-index="${i}">Supprimer</button></div>`;
+  }).join('');
+  return `<h2>${title}</h2>${items}<button type="button" class="secondary" data-add="${key}">+ ${addLabel}</button>`;
+}
+
+function renderTabs() {
+  document.getElementById('tabs').innerHTML = TABS.map(([id, label], i) =>
+    `<button type="button" data-tab="${id}" class="${i === 0 ? 'active' : ''}">${label}</button>`).join('');
+  document.querySelectorAll('[data-tab]').forEach(b => b.addEventListener('click', () => {
+    document.querySelectorAll('[data-tab]').forEach(x => x.classList.remove('active'));
+    b.classList.add('active');
+    document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+    document.getElementById('panel-' + b.dataset.tab).classList.add('active');
+  }));
+}
+
+function renderPanels() {
+  const p = data.property, pr = data.pricing, seo = data.seo, links = data.links;
+  const panels = {
+    infos: `<h2>Infos générales</h2>
+      ${field('Nom', 'property.name')}
+      ${area('Accroche', 'property.tagline')}
+      ${area('Description', 'property.description')}
+      ${area('Description longue', 'property.descriptionLong')}
+      ${field('Adresse', 'property.address')}
+      <div class="row">${field('Quartier', 'property.neighborhood')}${field('Commune', 'property.commune')}</div>
+      <div class="row">${field('Pays', 'property.country')}${field('Plus Code', 'property.plusCode')}</div>
+      <div class="row">${numField('Surface (m²)', 'property.surfaceM2')}${numField('Voyageurs max', 'property.guests')}</div>
+      <div class="row">${numField('Chambres', 'property.bedrooms')}${numField('Salles de bain', 'property.bathrooms')}</div>
+      <div class="row">${numField('Couchages', 'property.beds')}${field('Détail des couchages', 'property.bedsDetail')}</div>
+      <div class="row">${numField('Séjour minimum (nuits)', 'property.minNights')}${numField('Séjour maximum (nuits)', 'property.maxNights')}</div>
+      ${field('Nom de l’hôte', 'property.hostName')}
+      ${area('Note d’accès', 'property.accessNote')}
+      <p class="small">Animaux : ${p.petsAccepted ? 'acceptés' : 'non acceptés'} — modifiable dans data.json (champ property.petsAccepted).</p>`,
+    tarifs: `<h2>Tarifs</h2>
+      <div class="row">${numField('Prix de base ($US / nuit)', 'pricing.base')}${numField('Prix week-end ($US / nuit)', 'pricing.weekend')}</div>
+      ${field('Note week-end', 'pricing.weekendNote')}
+      ${area('Note sur les frais', 'pricing.feesNote')}
+      <h3>Paliers de réduction</h3>
+      ${(pr.tiers || []).map((t, i) => `<div class="item">
+        <div class="row">
+          <div><label>À partir de (nuits)</label><input type="number" data-tier="${i}" data-key="minNights" value="${esc(t.minNights)}"></div>
+          <div><label>Réduction (%)</label><input type="number" data-tier="${i}" data-key="discount" value="${esc(t.discount)}"></div>
+        </div>
+        <label>Libellé</label><input type="text" data-tier="${i}" data-key="label" value="${esc(t.label)}">
+        <button type="button" class="danger" data-remove-tier="${i}">Supprimer ce palier</button></div>`).join('')}
+      <button type="button" class="secondary" id="addTier">+ Ajouter un palier</button>`,
+    equipements: listPanel('Équipements', 'amenities',
+      [{ key: 'title', label: 'Titre' }, { key: 'detail', label: 'Détail', textarea: true }], 'Ajouter un équipement'),
+    photos: `<h2>Photos</h2><p class="small">Les fichiers vivent dans le dossier assets/. Pour remplacer une photo, déposez un nouveau fichier dans assets/ puis modifiez le nom de fichier ci-dessous.</p>` +
+      (data.photos || []).map((ph, i) => `<div class="item">
+        <img src="/assets/${esc(ph.file)}" alt="${esc(ph.alt)}">
+        <label>Fichier (dans assets/)</label><input type="text" data-list="photos" data-index="${i}" data-key="file" value="${esc(ph.file)}">
+        <label>Légende</label><input type="text" data-list="photos" data-index="${i}" data-key="caption" value="${esc(ph.caption)}">
+        <label>Texte alternatif</label><input type="text" data-list="photos" data-index="${i}" data-key="alt" value="${esc(ph.alt)}">
+        <button type="button" class="danger" data-remove="photos" data-index="${i}">Supprimer</button></div>`).join('') +
+      `<button type="button" class="secondary" data-add="photos">+ Ajouter une photo</button>`,
+    faq: listPanel('Questions fréquentes', 'faqs',
+      [{ key: 'question', label: 'Question' }, { key: 'answer', label: 'Réponse', textarea: true }], 'Ajouter une question'),
+    posts: listPanel('Posts', 'posts',
+      [{ key: 'title', label: 'Titre' }, { key: 'text', label: 'Texte', textarea: true }], 'Ajouter un post'),
+    avis: listPanel('Avis et réponses', 'reviews',
+      [{ key: 'source', label: 'Source' }, { key: 'rating', label: 'Note' },
+       { key: 'text', label: 'Avis', textarea: true }, { key: 'reply', label: 'Réponse de la résidence', textarea: true }], 'Ajouter un avis'),
+    liens: `<h2>Liens de réservation</h2>
+      ${field('Airbnb', 'links.airbnb', 'url')}
+      ${field('Booking.com', 'links.booking', 'url')}
+      <h2>Référencement (SEO)</h2>
+      ${field('Titre de la page', 'seo.title')}
+      ${area('Meta description', 'seo.description')}
+      ${field('Titre Open Graph', 'seo.ogTitle')}
+      ${area('Description Open Graph', 'seo.ogDescription')}`,
+  };
+  document.getElementById('panels').innerHTML = TABS.map(([id]) =>
+    `<div class="panel ${id === 'infos' ? 'active' : ''}" id="panel-${id}">${panels[id]}</div>`).join('');
+
+  document.querySelectorAll('[data-remove]').forEach(b => b.addEventListener('click', () => {
+    data[b.dataset.remove].splice(Number(b.dataset.index), 1);
+    renderPanels(); renderPreview();
+  }));
+  document.querySelectorAll('[data-add]').forEach(b => b.addEventListener('click', () => {
+    const key = b.dataset.add;
+    const blank = { amenities: { title: '', detail: '' }, photos: { file: '', caption: '', alt: '' },
+      faqs: { question: '', answer: '' }, posts: { title: '', text: '' },
+      reviews: { source: '', rating: '', text: '', reply: '' } }[key];
+    data[key].push(blank);
+    renderPanels(); renderPreview();
+  }));
+  document.querySelectorAll('[data-remove-tier]').forEach(b => b.addEventListener('click', () => {
+    data.pricing.tiers.splice(Number(b.dataset.removeTier), 1);
+    renderPanels(); renderPreview();
+  }));
+  const addTier = document.getElementById('addTier');
+  if (addTier) addTier.addEventListener('click', () => {
+    data.pricing.tiers.push({ minNights: 1, discount: 0, label: '' });
+    renderPanels(); renderPreview();
+  });
+}
+
+function collect() {
+  document.querySelectorAll('[data-path]').forEach(el => {
+    const keys = el.dataset.path.split('.');
+    let o = data;
+    keys.slice(0, -1).forEach(k => { o[k] = o[k] || {}; o = o[k]; });
+    const last = keys[keys.length - 1];
+    o[last] = el.type === 'number' ? (el.value === '' ? 0 : Number(el.value)) : el.value;
+  });
+  document.querySelectorAll('[data-list]').forEach(el => {
+    data[el.dataset.list][Number(el.dataset.index)][el.dataset.key] = el.value;
+  });
+  document.querySelectorAll('[data-tier]').forEach(el => {
+    const t = data.pricing.tiers[Number(el.dataset.tier)];
+    t[el.dataset.key] = el.dataset.key === 'label' ? el.value : Number(el.value);
+  });
+}
+
+function renderPreview() {
+  const p = data.property, pr = data.pricing;
+  const first = (data.photos || [])[0];
+  document.getElementById('preview').innerHTML = `
+    ${first ? `<img src="/assets/${esc(first.file)}" alt="${esc(first.alt)}">` : ''}
+    <h3>${esc(p.name)}</h3>
+    <p><strong>${esc(p.neighborhood)} · ${esc(p.commune)} · ${esc(p.country)}</strong></p>
+    <p>${esc(p.tagline)}</p>
+    <p>${esc(p.bedrooms)} chambres · ${esc(p.guests)} voyageurs · ${esc(p.surfaceM2)} m² · ${esc(p.bathrooms)} salles de bain · ${esc(p.beds)} couchages</p>
+    <p>À partir de <strong>${esc(pr.base)} $US / nuit</strong> (week-end : ${esc(pr.weekend)} $US)</p>
+    <p><a href="${esc(data.links.airbnb)}" target="_blank" rel="noopener">Airbnb</a> · <a href="${esc(data.links.booking)}" target="_blank" rel="noopener">Booking.com</a></p>`;
+  simulate();
+}
+
+function simulate() {
+  if (!data) return;
+  const nights = Math.max(1, Number(document.getElementById('simNights').value) || 1);
+  let best = 0;
+  (data.pricing.tiers || []).forEach(t => { if (nights >= t.minNights && t.discount > best) best = t.discount; });
+  const nightly = data.pricing.base * (1 - best / 100);
+  document.getElementById('simResult').textContent =
+    `${nights} nuit(s) — ${best > 0 ? `réduction ${best} % appliquée — ` : ''}${nightly.toFixed(2)} $US / nuit, soit ${ (nightly * nights).toFixed(2)} $US au total.`;
+}
+
+async function load() {
+  const [dRes, sRes] = await Promise.all([fetch('/api/data'), fetch('/api/status')]);
+  data = await dRes.json();
+  status = await sRes.json();
+  const banner = document.getElementById('authBanner');
+  if (!status.authRequired) {
+    banner.style.display = 'block';
+    banner.textContent = 'Avertissement : aucun mot de passe administrateur n’est défini (variable ADMIN_PASSWORD absente). En local c’est acceptable, mais ne rendez pas cette application accessible publiquement sans mot de passe.';
+  } else if (!status.authenticated) {
+    banner.style.display = 'block';
+    banner.textContent = 'Écriture protégée : connectez-vous pour enregistrer vos modifications.';
+    document.getElementById('loginBox').style.display = 'block';
+  } else {
+    banner.style.display = 'block';
+    banner.className = 'banner ok';
+    banner.textContent = 'Session administrateur active — l’enregistrement est autorisé.';
+  }
+  renderTabs();
+  renderPanels();
+  renderPreview();
+}
+
+document.getElementById('simNights').addEventListener('input', simulate);
+document.getElementById('saveBtn').addEventListener('click', async () => {
+  collect();
+  const msg = document.getElementById('saveMsg');
+  msg.textContent = 'Enregistrement…';
+  try {
+    const r = await fetch('/api/data', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || 'Échec de l’enregistrement.');
+    msg.textContent = 'Enregistré dans data.json.';
+    renderPreview();
+  } catch (e) {
+    msg.textContent = 'Erreur : ' + e.message;
+  }
+});
+document.getElementById('loginBtn').addEventListener('click', async () => {
+  const pw = document.getElementById('loginPassword').value;
+  const r = await fetch('/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: pw }) });
+  const j = await r.json();
+  document.getElementById('loginMsg').textContent = j.ok ? 'Connecté. Vous pouvez maintenant enregistrer.' : ('Échec : ' + (j.error || ''));
+  if (j.ok) { document.getElementById('loginBox').style.display = 'none'; load(); }
+});
+
+load();
+</script>
+</body>
+</html>
